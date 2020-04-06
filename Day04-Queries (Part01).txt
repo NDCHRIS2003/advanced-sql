@@ -1,0 +1,139 @@
+-- Figure 15-02a
+--creating stored procedure:
+
+--any changes on stored procedure will affect the original table in database
+--you can start transaction with stored procedure
+--you can validate data with stored procedure
+CREATE PROC spInvoiceReport
+AS
+SELECT VendorName, InvoiceNumber, InvoiceDate, InvoiceTotal
+FROM Invoices JOIN Vendors
+     ON Invoices.VendorID = Vendors.VendorID
+WHERE InvoiceTotal - CreditTotal - PaymentTotal > 0
+ORDER BY VendorName;
+
+-- how to run a procedure:
+
+EXEC spInvoiceReport;
+
+-------------------------------------------------------------------------------------------------
+-- Figure 15-03
+--we have to create procedure in such a way that it never crashes in aby circumstances
+--create another procedure to create a new table:
+
+CREATE PROC spCopyInvoices
+AS
+    IF OBJECT_ID('InvoiceCopy') IS NOT NULL
+        DROP TABLE InvoiceCopy;
+    SELECT *
+    INTO InvoiceCopy
+    FROM Invoices;
+
+--execure it and table will be created
+EXEC spCopyInvoices;
+
+--lets check if the table created
+select * from InvoiceCopy
+
+-------------------------------------------------------------------------------------------------
+
+-- Figure 15-04a
+IF OBJECT_ID('spInvTotal1') IS NOT NULL
+    DROP PROC spInvTotal1;
+GO
+--create the procedutre
+CREATE PROC spInvTotal1
+       @DateVar smalldatetime,
+       @InvTotal money OUTPUT
+AS
+SELECT @InvTotal = SUM(InvoiceTotal)
+FROM Invoices
+WHERE InvoiceDate >= @DateVar;
+
+--we need to declare it
+declare @MyTotal money
+exec spInvTotal1 '2016-01-01', @MyTotal output --you need out put at the end to work with print otherwise it wont print
+print format(@MyTotal, 'c') --to see the entered variable
+
+--check it
+select sum(InvoiceTotal)
+from Invoices
+where InvoiceDate >= '2016-01-01'
+
+-------------------------------------------------------------------------------------------------
+
+-- Figure 15-04b
+--this version doesnot that the outout variable
+IF OBJECT_ID('spInvTotal2') IS NOT NULL
+    DROP PROC spInvTotal2;
+GO
+
+CREATE PROC spInvTotal2
+       @DateVar smalldatetime = NULL --this is default parameter value. it can be provided or it can be omitted. only used if it is provided
+AS
+IF @DateVar IS NULL
+    SELECT @DateVar = MIN(InvoiceDate) FROM Invoices;
+SELECT SUM(InvoiceTotal)
+FROM Invoices
+WHERE InvoiceDate >= @DateVar;
+
+--run the procedure
+exec spInvTotal2 '2016-01-01'
+
+--or
+
+--when null minimum invoice date is taken
+--so basically, select takes all invoice dates and sums them up
+exec spInvTotal2
+--equivalent to select sum(InvoiceTotal from Invoices)
+
+-------------------------------------------------------------------------------------------------
+
+-- Figure 15-05a
+IF OBJECT_ID('spInvTotal3') IS NOT NULL
+    DROP PROC spInvTotal3;
+GO
+
+CREATE PROC spInvTotal3
+       @InvTotal money OUTPUT, --only this parameter is not optional
+       @DateVar smalldatetime = NULL, --optional
+       @VendorVar varchar(40) = '%' --optional
+AS
+
+IF @DateVar IS NULL
+   SELECT @DateVar = MIN(InvoiceDate) FROM Invoices;
+
+SELECT @InvTotal = SUM(InvoiceTotal)
+FROM Invoices JOIN Vendors
+    ON Invoices.VendorID = Vendors.VendorID
+WHERE (InvoiceDate >= @DateVar) AND
+      (VendorName LIKE @VendorVar);
+
+-- run hte procedure
+--two parametes that have default values are omitted
+-- the procedure uses both default values
+declare @total money
+exec spInvTotal3 @Total output
+print @Total
+
+--we provide value for the middle parameter but omit the last one
+declare @total2 money
+exec spInvTotal3 @Total output, '2016-01-01' --sum of the invoices after 2016-01-01
+print @Total2 --
+
+declare @total3 money
+exec spInvTotal3 @Total output, '2016-01-01', 'C%' --sum of the invoices after 2016-01-01
+print @Total3 --4944.56
+
+--last one is the same as last declare
+select sum(InvoiceTotal) from Invoices
+join Vendors on Vendors.VendorID = Invoices.InvoiceID
+where InvoiceDate >= '2016-01-01' and VendorName like 'C%'
+
+-- we want to assume default date  by provide value for vendor name pattern
+declare @total4 money
+exec spInvTotal3 @Total output, @VendorVar = 'C%' --we can omit @total as it is the first parameter. but for Vendorvar we have to say which parameter
+print @Total4
+
+-------------------------------------------------------------------------------------------------
+

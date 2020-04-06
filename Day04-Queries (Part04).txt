@@ -1,0 +1,169 @@
+--TRIGGERS
+--Triggers cannot accept parameters they just run when a specific operation happens.
+--Triggers runs automatically when specific oprtation runs on the specific table
+-- Figure 15-17a
+IF OBJECT_ID('Vendors_INSERT_UPDATE') IS NOT NULL
+    DROP TRIGGER Vendors_INSERT_UPDATE;
+GO
+
+CREATE TRIGGER Vendors_INSERT_UPDATE
+    ON Vendors
+    AFTER INSERT,UPDATE
+AS
+    UPDATE Vendors
+    SET VendorState = UPPER(VendorState)
+    WHERE VendorID IN (SELECT VendorID FROM Inserted);
+	--make the change only in the inserted row
+	--after creation it will be on the table for vendors
+
+--this triggers executes each time we make Insert or Update on table Vendors
+
+-- Figure 15-17b
+INSERT Vendors
+VALUES ('Peerless Uniforms, Inc.', '785 S Pixley Rd', NULL,
+        'Piqua', 'oh', '45356', '(937) 555-8845', NULL, NULL, 4,550); --if you try to insert 'oh' for state it will capitalize it when inserting the values 
+
+-- Figure 15-17c
+SELECT * FROM Vendors WHERE VendorID = (SELECT MAX(VendorID) FROM Vendors); 
+
+select * from Vendors
+
+--------------------------------------------------------------------------------------------------------------------
+
+-- Figure 15-18a
+IF OBJECT_ID('Invoices_DELETE') IS NOT NULL
+    DROP TRIGGER Invoices_DELETE;
+GO
+
+CREATE TRIGGER Invoices_DELETE
+	ON Invoices
+	AFTER DELETE
+AS
+INSERT INTO InvoiceArchive 
+	(InvoiceID, VendorID, InvoiceNumber, InvoiceDate, InvoiceTotal,
+	    PaymentTotal, CreditTotal, TermsID, InvoiceDueDate, PaymentDate)
+	SELECT InvoiceID, VendorID, InvoiceNumber, InvoiceDate, InvoiceTotal,
+	    PaymentTotal, CreditTotal, TermsID, InvoiceDueDate, PaymentDate 
+	FROM Deleted;
+
+select * from InvoiceArchive --its empty in the beginning but after creating the triggers whenever Delete runs on invoice the deleted values move to archive
+
+-- Figure 15-18b
+DELETE Invoices
+WHERE VendorID = 37;
+
+--------------------------------------------------------------------------------------------------------------------
+-- Figure 15-20b
+
+IF OBJECT_ID('Invoices_UPDATE') IS NOT NULL
+    DROP TRIGGER Invoices_UPDATE;
+GO
+
+CREATE TRIGGER Invoices_UPDATE
+    ON Invoices
+    AFTER UPDATE --after apdate means. update already has happened
+AS
+IF EXISTS           --Test whether InvoiceTotal was changed
+ (SELECT *
+  FROM Deleted JOIN Invoices
+    ON Deleted.InvoiceID = Invoices.InvoiceID
+  WHERE Deleted.InvoiceTotal <> Invoices.InvoiceTotal)
+  BEGIN
+    IF EXISTS       --Test whether line items total and InvoiceTotal match
+     (SELECT *
+      FROM Invoices JOIN
+          (SELECT InvoiceID, SUM(InvoiceLineItemAmount) AS SumOfInvoices
+           FROM InvoiceLineItems
+           GROUP BY InvoiceID) AS LineItems
+        ON Invoices.InvoiceID = LineItems.InvoiceID
+      WHERE (Invoices.InvoiceTotal <> LineItems.SumOfInvoices) AND
+            (LineItems.InvoiceID IN (SELECT InvoiceID FROM Deleted)))
+      BEGIN
+        ;
+        THROW 50113, 'Correct line item amounts before posting payment.', 1;
+        --ROLLBACK TRAN; --this line is never reacheable it doesn't make sense to ahve rollback here
+      END;
+  END;
+
+
+
+-- Figure 15-20c
+--begin tran --we don't need this as rollback never reached in the trigger code 
+UPDATE Invoices
+SET InvoiceTotal = 662, PaymentDate = '2016-05-09' --662 incorrect total
+WHERE InvoiceID = 98;
+
+--------------------------------------------------------------------------------------------------------------------
+
+--A Complicated Example
+
+-- Figure 15-19a
+IF OBJECT_ID('IBM_Invoices') IS NOT NULL
+	DROP VIEW IBM_Invoices
+GO
+
+CREATE VIEW IBM_Invoices
+AS
+SELECT InvoiceNumber, InvoiceDate, InvoiceTotal
+FROM Invoices
+WHERE VendorID = (SELECT VendorID FROM Vendors WHERE VendorName = 'IBM');
+GO
+
+
+
+IF OBJECT_ID('IBM_Invoices_INSERT') IS NOT NULL
+    DROP TRIGGER IBM_Invoices_INSERT;
+GO
+
+--"REDIRECT" illigal insert on a view to insert of base table
+CREATE TRIGGER IBM_Invoices_INSERT
+    ON IBM_Invoices
+    INSTEAD OF INSERT
+AS
+DECLARE @InvoiceDate smalldatetime, @InvoiceNumber varchar(50),
+        @InvoiceTotal money, @VendorID int,
+        @InvoiceDueDate smalldatetime, @TermsID int,
+        @DefaultTerms smallint, @TestRowCount int;
+SELECT @TestRowCount = COUNT(*) FROM Inserted;
+IF @TestRowCount = 1 --allows only inserting one row at a time. if it's not true, it goes to end and throw error
+    BEGIN
+        SELECT @InvoiceNumber = InvoiceNumber, @InvoiceDate = InvoiceDate,
+            @InvoiceTotal = InvoiceTotal
+        FROM Inserted;
+        IF (@InvoiceDate IS NOT NULL AND @InvoiceNumber IS NOT NULL AND --if these are null. it will be false and throws error 
+            @InvoiceTotal IS NOT NULL)
+            BEGIN
+                SELECT @VendorID = VendorID, @TermsID = DefaultTermsID
+                FROM Vendors 
+                WHERE VendorName = 'IBM';
+
+                SELECT @DefaultTerms = TermsDueDays
+                FROM Terms
+                WHERE TermsID = @TermsID;
+
+                SET @InvoiceDueDate = @InvoiceDate + @DefaultTerms;
+
+                INSERT Invoices
+                   (VendorID, InvoiceNumber, InvoiceDate, InvoiceTotal,
+                    TermsID, InvoiceDueDate, PaymentDate)
+                VALUES (@VendorID, @InvoiceNumber, @InvoiceDate,
+                   @InvoiceTotal, @TermsID, @InvoiceDueDate, NULL);
+            END;
+    END;
+ELSE
+	THROW 50027, 'Limit INSERT to a single row.', 1;
+
+
+select * from IBM_Invoices
+
+select * from IBM_Invoices
+
+-- Figure 15-19b
+INSERT IBM_Invoices --this was not working before running the trigger.
+VALUES ('RA23988', '2016-05-09', 417.34);
+
+select * from invoices where VendorID = 34 --After running the trigger it 
+
+select VendorID, DefaultTermsID, TermsDueDays
+from Vendors join Terms on Vendors.DefaultTermsID = Terms.TermsID
+where VendorName = 'IBM'

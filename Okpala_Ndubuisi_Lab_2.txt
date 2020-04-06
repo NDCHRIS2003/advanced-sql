@@ -1,0 +1,58 @@
+--Assignment 2 Question 1
+--1)Create a view named OrderItemProducts that returns columns from the Orders, OrderItems, and Products tables.
+--This view should return these columns from the Orders table: OrderID, OrderDate, TaxAmount, and ShipDate.
+--This view should return these columns from the OrderItems table: ItemPrice, DiscountAmount, FinalPrice (the discount amount subtracted from the item price), Quantity, and ItemTotal (the calculated total for the item).
+--This view should return the ProductName column from the Products table.
+create view OrderItemProducts
+as
+select O.OrderID, O.OrderDate, O.TaxAmount, O.ShipDate, Ord.ItemPrice, 
+       Ord.DiscountAmount, sum(Ord.ItemPrice-Ord.DiscountAmount) as FinalPrice,
+	   Quantity, sum(Quantity*(Ord.ItemPrice-Ord.DiscountAmount)) as TotalItem,
+	   ProductName 
+	   from OrderItems as Ord join Orders as O   on O.OrderID = Ord.OrderID
+	   join Products as P on Ord.ProductID = P.ProductID
+	   group by O.OrderID, O.OrderDate, O.TaxAmount, O.ShipDate, Ord.ItemPrice, 
+       Ord.DiscountAmount,Quantity, ProductName
+
+select * from OrderItemProducts
+
+
+-- Assignment 2 Question 2
+--Create a view named ProductSummary that uses the view you created in point 1. 
+--This view should return some summary information about each product.
+--Each row should include these columns: ProductName, OrderCount (the number of times the product has been ordered), 
+--and OrderTotal (the total sales for the product).Write a SELECT statement that uses the 
+--view that you created in point 2 to get total sales for the five best selling products.
+--Take a screenshot that shows results returned from this query.
+
+create view ProductSummary
+as 
+select ProductName, count(Quantity) as OrderCount, sum(TotalItem) as OrderTotal
+       from OrderItemProducts
+	   group by ProductName
+
+select top 5 ProductName, OrderCount, OrderTotal
+           from ProductSummary
+		   order by OrderTotal Desc
+		   
+
+
+-- Assignment 2 Question 3
+--Suppose an application will often search Products based on ProductName. Create an index that makes 
+--such search more efficient. Take a screenshoot that shows your command succeeded.
+
+create index INDX_ProductName
+on Products (ProductName)
+
+
+--Assignment 2 Question 4
+--Alter table ORDERS to ensure that both ShipAddressID and BillingAddressID reference table Addresses. 
+--Take a screenshoot that shows your command(s) succeeded
+select * from orders
+select * from Addresses
+
+alter table Orders
+add constraint FK_Orders_Ship_Address foreign key(ShipAddressID) references Addresses(AddressID)
+
+alter table Orders
+add constraint FK_Billing_Address foreign key(BillingAddressID) references Addresses(AddressID)
